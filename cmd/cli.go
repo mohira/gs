@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"encoding/csv"
 	"flag"
 	"fmt"
+	"github.com/joho/godotenv"
 	"io"
+	"os"
 )
 
 const (
@@ -22,6 +25,11 @@ func NewCLI(inStream io.Reader, outStream io.Writer, errStream io.Writer) *CLI {
 }
 
 func (c *CLI) Run(args []string) int {
+	err := godotenv.Load()
+	if err != nil {
+		return ExitCodeSomeError
+	}
+
 	var version bool
 
 	flags := flag.NewFlagSet("gs", flag.ContinueOnError)
@@ -42,6 +50,43 @@ func (c *CLI) Run(args []string) int {
 		}
 
 		return ExitCodeOK
+	}
+
+	thCmd := flag.NewFlagSet("th", flag.ExitOnError)
+	thUserToken := thCmd.String("token", os.Getenv("USER_TOKEN"), "token")
+	thChannelId := thCmd.String("channel", os.Getenv("CHANNEL_ID"), "channel")
+
+	switch flags.Args()[0] {
+	case "th":
+		if err := thCmd.Parse(args[2:]); err != nil {
+			return ExitCodeParseError
+		}
+
+		slackThreads, err := FetchSlackThreads(*thUserToken, *thChannelId)
+
+		if err != nil {
+			if _, err := fmt.Fprint(c.errStream, err); err != nil {
+				return ExitCodeSomeError
+			}
+			return ExitCodeSomeError
+		}
+
+		f, err := os.Create("threads.csv")
+		if err != nil {
+			return ExitCodeSomeError
+		}
+		defer f.Close()
+
+		w := csv.NewWriter(f)
+		for _, thread := range slackThreads {
+			record := []string{thread.Ts, thread.FirstLine()}
+
+			if err := w.Write(record); err != nil {
+				return ExitCodeSomeError
+			}
+		}
+		w.Flush()
+
 	}
 
 	return ExitCodeOK
