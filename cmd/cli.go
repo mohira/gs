@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"github.com/joho/godotenv"
 	"io"
+	"net/http"
 	"os"
+	"sync"
 )
 
 const (
@@ -63,12 +65,12 @@ func (c *CLI) Run(args []string) int {
 		return ExitCodeOK
 	}
 
-	thCmd := flag.NewFlagSet("th", flag.ExitOnError)
-	thUserToken := thCmd.String("token", os.Getenv("USER_TOKEN"), "token")
-	thChannelId := thCmd.String("channel", os.Getenv("CHANNEL_ID"), "channel")
-
 	switch flags.Args()[0] {
 	case "th":
+		thCmd := flag.NewFlagSet("th", flag.ExitOnError)
+		thUserToken := thCmd.String("token", os.Getenv("USER_TOKEN"), "token")
+		thChannelId := thCmd.String("channel", os.Getenv("CHANNEL_ID"), "channel")
+
 		if err := thCmd.Parse(args[2:]); err != nil {
 			return ExitCodeParseError
 		}
@@ -97,6 +99,55 @@ func (c *CLI) Run(args []string) int {
 			}
 		}
 		w.Flush()
+	case "dl":
+		dlCmd := flag.NewFlagSet("dl", flag.ExitOnError)
+		dlUserToken := dlCmd.String("token", os.Getenv("USER_TOKEN"), "token")
+		dlChannelId := dlCmd.String("channel", os.Getenv("CHANNEL_ID"), "channel")
+		dlTs := dlCmd.String("ts", "", "ts")
+
+		if err := dlCmd.Parse(args[2:]); err != nil {
+			return ExitCodeParseError
+		}
+
+		slackFiles, err := FetchSlackFiles(*dlUserToken, *dlChannelId, *dlTs)
+		if err != nil {
+			fmt.Fprintf(c.errStream, "err: %s", err.Error())
+			return ExitCodeSomeError
+		}
+
+		var wg sync.WaitGroup
+
+		// TODO: エラー処理が謎(存在しないディレクトリを使えばエラー起こせる)
+		for _, file := range slackFiles {
+			wg.Add(1)
+			fmt.Fprintf(c.outStream, "%s\n", file.Name)
+
+			go func(name, url string) error {
+				defer wg.Done()
+
+				savePath := "out/" + name
+				f, err := os.Create(savePath)
+				if err != nil {
+					fmt.Fprintf(c.errStream, "os.Create error: %s\n", err)
+					return err
+				}
+
+				response, err := http.Get(url)
+				if err != nil {
+					fmt.Fprintf(c.errStream, "http.Get error: %s\n", err)
+					return err
+				}
+
+				if err := response.Write(f); err != nil {
+					fmt.Fprintf(c.errStream, "response.Write error: %s\n", err)
+					return err
+				}
+
+				return nil
+			}(file.Name, file.UrlPrivateDownload)
+		}
+
+		wg.Wait()
 
 	}
 

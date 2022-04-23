@@ -1,5 +1,6 @@
 gs
 *.csv
+*.pdf
 .env
 # Binaries for programs and plugins
 *.exe
