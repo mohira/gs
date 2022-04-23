@@ -15,6 +15,13 @@ const (
 	ExitCodeSomeError  = 2
 )
 
+var helpText = `Usage: myxargs [OPTION]... COMMAND [INITIAL-ARGS]...
+A simple tool, written in Go.
+
+  -help       display this help and exit
+  -version    output version information and exit
+`
+
 type CLI struct {
 	inStream             io.Reader
 	outStream, errStream io.Writer
@@ -35,11 +42,15 @@ func (c *CLI) Run(args []string) int {
 	flags := flag.NewFlagSet("gs", flag.ContinueOnError)
 	flags.BoolVar(&version, "version", false, "")
 
+	flags.Usage = func() {
+		fmt.Fprint(c.errStream, helpText)
+	}
+
+	if len(args) == 1 {
+		flags.Usage()
+		return ExitCodeSomeError
+	}
 	if err := flags.Parse(args[1:]); err != nil {
-		_, err := fmt.Fprint(c.errStream, "flags.Parseに失敗したよ")
-		if err != nil {
-			return ExitCodeSomeError
-		}
 		return ExitCodeParseError
 	}
 
